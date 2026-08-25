@@ -99,7 +99,7 @@ def test_a_read_repairs_replicas_that_missed_the_value() -> None:
     Three replicas, quorums of two. The value is planted on two of them, as a
     partial write would leave it; the third has never seen it. After one
     read, all three hold it -- so the value cannot be un-observed later.
-    Seed 61 was this bug.
+    Seed 208 is this bug in the wild.
     """
     seen = []
 

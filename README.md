@@ -4,6 +4,9 @@
 
 **Deterministic simulation testing for concurrent Python.**
 
+📄 **[Read the writeup](WRITEUP.md)** — what this is, the two data-loss bugs it
+found in a database I wrote, and the three mistakes I made building it.
+
 A concurrency bug that appears once in five hundred runs is nearly impossible
 to fix, because you cannot make it happen again. Hourglass makes it happen on
 demand: it replaces the clock, the scheduler's choices, and the network with
@@ -144,10 +147,11 @@ answered 1.7 seconds too late.
 
 ### 2. A read could observe a value and then un-observe it
 
-```
-[ 166.17 -> pending ]  c0 put(key1,'c0#2') -> PENDING
-[ 640.18 ->  676.66 ]  c1 get(key1) -> 'c0#2'    <- so it DID land somewhere
-[ 677.43 ->  742.65 ]  c0 get(key1) -> None      <- 0.8ms later, gone
+```console
+$ python sweep.py --seed 208 --faults hostile --broken
+[  17.22 -> pending ]ms  c3 put(key0, 'c3#0') -> PENDING
+[  41.43 ->   75.91 ]ms  c2 get(key0) -> 'c3#0'
+[  90.26 ->  151.95 ]ms  c0 get(key0) -> None   <-- impossible
 ```
 
 A timed-out write reached one replica. One read's quorum happened to include
@@ -223,7 +227,7 @@ Under active development. Built in the open, one day at a time.
 - [x] Day 4 — linearizability checker
 - [x] Day 5 — the bug hunt, with automatic shrinking
 - [x] Day 6 — fixes and CI regression gate
-- [ ] Day 7 — writeup
+- [x] Day 7 — writeup: [WRITEUP.md](WRITEUP.md)
 
 ## Running it
 
