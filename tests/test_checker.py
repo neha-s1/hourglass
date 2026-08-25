@@ -319,9 +319,10 @@ def test_witnesses_from_the_real_cluster_stay_small_and_explanatory() -> None:
 
     from examples.kvstore.cluster import ClusterConfig
 
+    buggy = ClusterConfig(read_repair=False, count_distinct_replicas=False)
     checked = 0
     for seed in range(60):
-        trial = play(seed, ClusterConfig(), FaultConfig.hostile())
+        trial = play(seed, buggy, FaultConfig.hostile())
         for key_report in trial.report.violations:
             checked += 1
             assert 1 < len(key_report.witness) <= 8, key_report.render()

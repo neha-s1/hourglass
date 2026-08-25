@@ -12,6 +12,11 @@ from examples.kvstore.cluster import ClusterConfig
 
 NODES = [f"r{i}" for i in range(5)] + [f"c{i}" for i in range(5)]
 
+#: The store with both fixes switched off. The checker and the shrinker need
+#: something that actually misbehaves to be tested against, and pinning them
+#: to the fixed store would mean they silently stopped being exercised.
+BUGGY = ClusterConfig(read_repair=False, count_distinct_replicas=False)
+
 
 # ---------------------------------------------------------------------------
 # The sequence minimiser
@@ -138,29 +143,35 @@ def test_every_crash_is_eventually_restarted() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_the_sweep_finds_violations_under_hostile_faults() -> None:
+def test_the_sweep_finds_violations_in_a_broken_store() -> None:
+    from sweep import play
+
+    broken = [seed for seed in range(80) if play(seed, BUGGY, FaultConfig.hostile()).broke]
+    assert len(broken) >= 5, f"expected several failures, found {broken}"
+
+
+def test_the_sweep_finds_nothing_in_the_fixed_store() -> None:
     from sweep import play
 
     config, faults = ClusterConfig(), FaultConfig.hostile()
-    broken = [seed for seed in range(80) if play(seed, config, faults).broke]
-    assert len(broken) >= 5, f"expected several failures, found {broken}"
+    broken = [seed for seed in range(250) if play(seed, config, faults).broke]
+    assert broken == [], f"seeds still failing: {broken}"
 
 
 def test_a_perfect_network_produces_no_violations() -> None:
     """The hunt must not cry wolf when nothing is wrong."""
     from sweep import play
 
-    config, faults = ClusterConfig(), FaultConfig.perfect()
     for seed in range(40):
-        assert not play(seed, config, faults, events=[]).broke
+        assert not play(seed, BUGGY, FaultConfig.perfect(), events=[]).broke
 
 
 @pytest.mark.parametrize("seed", [0, 1, 17])
 def test_a_known_failing_seed_reproduces_exactly(seed: int) -> None:
     from sweep import play
 
-    config, faults = ClusterConfig(), FaultConfig.hostile()
-    first, second = play(seed, config, faults), play(seed, config, faults)
+    faults = FaultConfig.hostile()
+    first, second = play(seed, BUGGY, faults), play(seed, BUGGY, faults)
 
     assert first.broke and second.broke
     assert [k.key for k in first.report.violations] == [k.key for k in second.report.violations]
@@ -170,12 +181,12 @@ def test_a_known_failing_seed_reproduces_exactly(seed: int) -> None:
 def test_shrinking_never_makes_a_case_larger() -> None:
     from sweep import shrink
 
-    config, faults = ClusterConfig(), FaultConfig.hostile()
+    faults = FaultConfig.hostile()
     events = scenario_for_seed(1, NODES)
-    small = shrink(1, config, faults, events, limit=120)
+    small = shrink(1, BUGGY, faults, events, limit=120)
 
     assert len(small.events) <= len(events)
-    assert small.config.total_operations <= config.total_operations
+    assert small.config.total_operations <= BUGGY.total_operations
     assert small.config.clients >= 2
     assert small.config.keys >= 1
 
@@ -184,8 +195,8 @@ def test_a_shrunk_case_still_fails() -> None:
     """The whole point: the smaller reproduction must reproduce."""
     from sweep import broke, shrink
 
-    config, faults = ClusterConfig(), FaultConfig.hostile()
+    faults = FaultConfig.hostile()
     events = scenario_for_seed(0, NODES)
-    small = shrink(0, config, faults, events, limit=120)
+    small = shrink(0, BUGGY, faults, events, limit=120)
 
     assert broke(0, small.config, faults, small.events)
