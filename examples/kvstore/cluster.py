@@ -37,6 +37,11 @@ class ClusterConfig:
     timeout: float = 0.5
     think_time: float = 0.05
     read_fraction: float = 0.5
+    #: Both default to the fixed behaviour. Turning them off restores the
+    #: two bugs the sweep originally found, so the checker and the shrinker
+    #: keep a real target to be tested against.
+    read_repair: bool = True
+    count_distinct_replicas: bool = True
 
     def __post_init__(self) -> None:
         if self.write_quorum + self.read_quorum <= self.replicas:
@@ -159,6 +164,8 @@ def run(
             read_quorum=config.read_quorum,
             timeout=config.timeout,
             history=history,
+            read_repair=config.read_repair,
+            count_distinct_replicas=config.count_distinct_replicas,
         )
         for index, name in enumerate(client_names)
     ]
