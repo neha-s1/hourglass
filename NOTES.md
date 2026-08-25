@@ -41,6 +41,21 @@ My answers:
 
 ## Day 3 — the replicated key-value store
 
+Questions to answer in my own words:
+
+1. Five replicas, W=3, R=3. Why is `W + R > N` supposed to guarantee a read
+   sees the latest write?
+2. That guarantee has a hole. What happens to a write that reached two
+   replicas and then timed out — and does the argument cover it?
+3. After the network heals, two replicas still hold a different value for
+   `key1` than the other three. Why does nothing fix that?
+4. The timeout bug I hit today was in the *network*, not the store: a stale
+   deadline from operation 1 killed operation 8. Why did matching waiters by
+   task id fail, and why does a per-call ticket fix it?
+5. Why did I write the store without hardening it?
+
+My answers:
+
 > _(fill in)_
 
 ## Day 4 — the linearizability checker

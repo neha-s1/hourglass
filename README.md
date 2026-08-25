@@ -61,7 +61,7 @@ Under active development. Built in the open, one day at a time.
 
 - [x] Day 1 — deterministic runtime: scheduler, virtual clock, seeded ordering
 - [x] Day 2 — simulated network: latency, loss, duplication, reordering, partitions, crashes
-- [ ] Day 3 — a quorum-replicated key-value store to test
+- [x] Day 3 — a quorum-replicated key-value store to test
 - [ ] Day 4 — linearizability checker
 - [ ] Day 5 — the bug hunt, with automatic shrinking
 - [ ] Day 6 — fixes and CI regression gate
