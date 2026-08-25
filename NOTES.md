@@ -60,6 +60,22 @@ My answers:
 
 ## Day 4 — the linearizability checker
 
+Questions to answer in my own words:
+
+1. What exactly is the question a linearizability checker asks?
+2. Why is a read that overlaps a write allowed to return *either* the old or
+   the new value? What would go wrong if I assumed writes take effect when
+   issued?
+3. A write that timed out is called *pending*. Why does it get no return time
+   at all, and why must the search try both "it landed" and "it never did"?
+4. Why can each key be checked separately, and why does that matter so much
+   for speed?
+5. Why does the checker report UNKNOWN instead of VIOLATION when it runs out
+   of budget? What would break if it did not?
+6. Explain the violation it found on seed 8 to someone non-technical.
+
+My answers:
+
 > _(fill in)_
 
 ## Day 5 — the bug hunt

@@ -192,6 +192,7 @@ def main() -> None:
     parser.add_argument("--faults", choices=["perfect", "realistic", "hostile"], default="perfect")
     parser.add_argument("--partition", action="store_true", help="split the cluster 3/2 midway")
     parser.add_argument("--trace", action="store_true")
+    parser.add_argument("--check", action="store_true", help="run the linearizability checker")
     args = parser.parse_args()
 
     profiles = {
@@ -219,6 +220,18 @@ def main() -> None:
     for name in sorted(result.snapshots):
         rendered = {k: v[0] for k, v in sorted(result.snapshots[name].items())}
         print(f"  {name}: {rendered}")
+
+    if args.check:
+        from hourglass.checker import check
+        from hourglass.history import History
+
+        history = History.from_records(result.history)
+        report = check(history)
+        print()
+        print(f"  {history.summary()}")
+        print(f"  linearizable: {report.verdict}")
+        print()
+        print(report.render())
 
 
 if __name__ == "__main__":

@@ -41,6 +41,30 @@ partition 0.5s -> 1.5s
 The contiguous block is the partition. The stragglers on either side are
 ordinary packet loss — and both are fixed by the seed.
 
+## Catching a real bug
+
+Point it at a five-replica key-value store with quorum reads and writes,
+split the network in half, and ask whether the result could have come from a
+correct database:
+
+```console
+$ python -m examples.kvstore.cluster --seed 8 --partition --faults realistic --check
+100 operations, 3 keys, peak concurrency 8, 4 pending writes
+linearizable: violation
+
+key 'key1': violation (31 ops, 13 states)
+  smallest set of operations with no valid ordering:
+    c2 put(key1, 'c2#6') -> PENDING
+    c3 get(key1) -> 'c2#6'
+    c3 put(key1, 'c3#8') -> PENDING
+    c0 get(key1) -> 'c2#0'  <-- impossible
+```
+
+A write timed out but reached some replicas. One client read it back. A later
+read returned a *much older* value. No single correct database, serving one
+request at a time, could ever produce that sequence — and the checker proves
+it by exhausting every possible ordering rather than guessing.
+
 ## How it works
 
 Three sources of nondeterminism, all removed:
@@ -62,7 +86,7 @@ Under active development. Built in the open, one day at a time.
 - [x] Day 1 — deterministic runtime: scheduler, virtual clock, seeded ordering
 - [x] Day 2 — simulated network: latency, loss, duplication, reordering, partitions, crashes
 - [x] Day 3 — a quorum-replicated key-value store to test
-- [ ] Day 4 — linearizability checker
+- [x] Day 4 — linearizability checker
 - [ ] Day 5 — the bug hunt, with automatic shrinking
 - [ ] Day 6 — fixes and CI regression gate
 - [ ] Day 7 — writeup
