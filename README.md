@@ -1,5 +1,7 @@
 # Hourglass
 
+[![tests](https://github.com/neha-s1/hourglass/actions/workflows/ci.yml/badge.svg)](https://github.com/neha-s1/hourglass/actions/workflows/ci.yml)
+
 **Deterministic simulation testing for concurrent Python.**
 
 A concurrency bug that appears once in five hundred runs is nearly impossible
