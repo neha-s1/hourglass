@@ -128,12 +128,19 @@ class History:
         return buckets
 
     def concurrency(self) -> int:
-        """The largest number of operations ever in flight at once."""
+        """The largest number of operations ever in flight at once.
+
+        Measured from when each operation was issued to when the client
+        stopped waiting -- including operations that timed out, which did
+        stop being in flight even though their effect is still undecided.
+        Treating a pending write as in flight forever would count every one
+        that ever timed out, and report a concurrency far above the number
+        of clients.
+        """
         events: list[tuple[int, int]] = []
         for op in self.operations:
             events.append((op.invoked_ns, +1))
-            if not op.pending:
-                events.append((op.returned_ns, -1))
+            events.append((op.returned_ns, -1))
         events.sort()
         current = peak = 0
         for _time, delta in events:

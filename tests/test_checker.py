@@ -199,20 +199,24 @@ def test_a_violation_on_one_key_condemns_the_history() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_the_witness_is_the_shortest_impossible_prefix() -> None:
+def test_the_witness_is_a_minimal_impossible_subset() -> None:
+    """Not merely the shortest failing prefix -- the smallest failing subset.
+
+    Two operations suffice here: a write that was acknowledged, and a later
+    read that saw nothing. The reads in between are irrelevant to the proof.
+    """
     records = [
         rec("c0", "put", "k", 0, 10, value="a"),
         rec("c1", "get", "k", 20, 30, result="a"),
-        rec("c2", "get", "k", 40, 50, result=None),  # impossible from here
+        rec("c2", "get", "k", 40, 50, result=None),
         rec("c3", "get", "k", 60, 70, result=None),
         rec("c4", "get", "k", 80, 90, result=None),
     ]
-    report = check(History.from_records(records))
-    (failure,) = report.violations
+    (failure,) = check(History.from_records(records)).violations
 
-    assert len(failure.witness) == 3, failure.render()
+    assert len(failure.witness) == 2, failure.render()
+    assert failure.witness[0].kind == "put"
     assert failure.witness[-1].result is None
-    assert failure.witness[-1].process == "c2"
 
 
 def test_the_witness_is_much_smaller_than_the_history() -> None:
@@ -226,7 +230,7 @@ def test_the_witness_is_much_smaller_than_the_history() -> None:
 
     (failure,) = check(History.from_records(records)).violations
     assert len(failure.operations) == 33
-    assert len(failure.witness) == 3
+    assert len(failure.witness) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -285,3 +289,44 @@ def test_checking_a_hundred_operations_is_fast() -> None:
     started = time.perf_counter()
     check(history)
     assert time.perf_counter() - started < 1.0
+
+
+def test_a_witness_never_reads_a_value_nothing_in_it_wrote() -> None:
+    """Minimisation must leave an explanation, not just a proof.
+
+    Deleting the write that produced a value makes the read of it
+    unorderable for a trivial reason. That is sound but useless, so the
+    minimiser refuses to remove a write some retained read depends on.
+    """
+    records = [
+        rec("c0", "put", "k", 0, 10, value="first"),
+        rec("c1", "put", "k", 20, 30, value="second"),
+        rec("c2", "get", "k", 40, 50, result="second"),
+        rec("c3", "get", "k", 60, 70, result="first"),
+    ]
+    (failure,) = check(History.from_records(records)).violations
+
+    written = {op.value for op in failure.witness if op.kind == "put"}
+    for op in failure.witness:
+        if op.kind == "get" and op.result is not None:
+            assert op.result in written, failure.render()
+
+
+def test_witnesses_from_the_real_cluster_stay_small_and_explanatory() -> None:
+    """Across many real failures, every witness must be readable and honest."""
+    from hourglass.faults import FaultConfig
+    from sweep import play
+
+    from examples.kvstore.cluster import ClusterConfig
+
+    checked = 0
+    for seed in range(60):
+        trial = play(seed, ClusterConfig(), FaultConfig.hostile())
+        for key_report in trial.report.violations:
+            checked += 1
+            assert 1 < len(key_report.witness) <= 8, key_report.render()
+            written = {op.value for op in key_report.witness if op.kind == "put"}
+            for op in key_report.witness:
+                if op.kind == "get" and op.result is not None:
+                    assert op.result in written, key_report.render()
+    assert checked >= 5, f"only {checked} violations found to inspect"

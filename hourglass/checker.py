@@ -33,6 +33,7 @@ from enum import Enum
 from typing import Any
 
 from hourglass.history import GET, MISSING, History, Operation
+from hourglass.shrink import Budget, minimise_sequence
 
 #: How many search states to explore per key before giving up. A checker that
 #: reported "violation" when it merely ran out of patience would be worse than
@@ -71,8 +72,10 @@ class KeyReport:
             return head
         lines = [head, "  smallest set of operations with no valid ordering:"]
         for op in self.witness:
-            marker = "  <-- impossible" if op is self.witness[-1] else ""
-            lines.append(f"    {op.describe()}{marker}")
+            end = "pending" if op.pending else f"{op.returned_ns / 1e6:.2f}"
+            window = f"[{op.invoked_ns / 1e6:>9.2f} -> {end:>9}]ms"
+            marker = "   <-- impossible" if op is self.witness[-1] else ""
+            lines.append(f"    {window}  {op.describe()}{marker}")
         return "\n".join(lines)
 
 
@@ -207,7 +210,33 @@ def _localise(ops: list[Operation], budget: int) -> list[Operation]:
             high = middle
         else:
             low = middle + 1
-    return ops[:low]
+    prefix = ops[:low]
+
+    # The shortest failing prefix is not the smallest failing *subset*: a
+    # violation involving four operations may sit behind twenty irrelevant
+    # ones. Since linearizability is inherited by subsets, any subset that
+    # still cannot be ordered is itself a valid, smaller witness -- so delta
+    # debugging can strip the rest away.
+    def subset_fails(candidate: list[Operation]) -> bool:
+        if not candidate:
+            return False
+
+        # A subset must stay *explanatory*, not merely impossible. Delete the
+        # write that produced a value and the read of it becomes unorderable
+        # for a trivial reason -- a sound proof that explains nothing. So a
+        # candidate is only accepted while every value still being read is
+        # still being written by something in the set.
+        written = {op.value for op in candidate if op.kind != GET}
+        for op in candidate:
+            if op.kind == GET and op.result is not None and op.result not in written:
+                return False
+
+        try:
+            return _search_only(candidate, budget) is None
+        except _BudgetExhausted:
+            return False
+
+    return minimise_sequence(prefix, subset_fails, Budget(400))
 
 
 def _search_only(ops: list[Operation], budget: int):
