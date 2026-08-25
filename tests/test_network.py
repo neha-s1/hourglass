@@ -295,3 +295,36 @@ def test_harsher_profiles_lose_more_messages() -> None:
         losses[profile] = total
 
     assert losses["perfect"] < losses["realistic"] < losses["hostile"], losses
+
+
+def test_an_expired_timeout_cannot_cancel_a_later_recv() -> None:
+    """A stale timeout must not abort an unrelated, still-waiting recv.
+
+    Regression test. A task that calls recv() repeatedly leaves a scheduled
+    timeout behind for each call. When those were matched by task id alone,
+    the deadline from operation 1 would fire mid-way through operation 8 and
+    hand it a spurious None -- which looked exactly like a network failure on
+    a network that had dropped nothing.
+    """
+    config = FaultConfig(min_latency=0.001, max_latency=0.001)
+    sim, net = build(seed=1, config=config)
+    received = []
+
+    async def listener() -> None:
+        # First recv is satisfied almost immediately, but leaves a timeout
+        # scheduled for t=0.5.
+        received.append(await recv("b", timeout=0.5))
+        # Second recv is still waiting when that stale timeout comes due.
+        received.append(await recv("b", timeout=2.0))
+
+    async def sender() -> None:
+        net.send("a", "b", "first")
+        await sleep(1.0)  # well past the first recv's deadline
+        net.send("a", "b", "second")
+
+    with running(sim):
+        sim.spawn(listener(), name="listener")
+        sim.spawn(sender(), name="sender")
+        sim.run()
+
+    assert [m.payload if m else None for m in received] == ["first", "second"]

@@ -63,7 +63,12 @@ class Network:
         self.config = config or FaultConfig.perfect()
 
         self._inboxes: dict[str, list[Message]] = {}
-        self._waiters: dict[str, list[int]] = {}
+        # Waiting receivers, as (task id, ticket). The ticket is unique per
+        # recv() call: a task that receives many times in a row gets a fresh
+        # one each time, so an expiring timeout can tell whether it belongs to
+        # the recv still waiting or to one that was satisfied long ago.
+        self._waiters: dict[str, list[tuple[int, int]]] = {}
+        self._next_ticket = 0
         self._partitions: list[frozenset[str]] = []
         self._crashed: set[str] = set()
         self._next_mid = 0
@@ -177,7 +182,7 @@ class Network:
 
         waiters = self._waiters[message.dst]
         if waiters:
-            tid = waiters.pop(0)
+            tid, _ticket = waiters.pop(0)
             self.sim.wake(tid, message)
         else:
             self._inboxes[message.dst].append(message)
@@ -192,20 +197,32 @@ class Network:
             self.sim.wake(task.tid, inbox.pop(0))
             return
 
+        ticket = self._next_ticket
+        self._next_ticket += 1
+
         self.sim.block(task)
-        self._waiters[request.node].append(task.tid)
+        self._waiters[request.node].append((task.tid, ticket))
 
         if request.deadline_ns is not None:
-            node, tid = request.node, task.tid
-            self.sim.call_at(request.deadline_ns, lambda: self._expire(node, tid))
+            node = request.node
+            self.sim.call_at(request.deadline_ns, lambda: self._expire(node, ticket))
 
-    def _expire(self, node: str, tid: int) -> None:
-        """Wake a waiter with ``None`` if nothing arrived before its deadline."""
+    def _expire(self, node: str, ticket: int) -> None:
+        """Wake a waiter with ``None`` if nothing arrived before its deadline.
+
+        Matching on the ticket rather than the task id matters. A task that
+        calls recv() repeatedly leaves a trail of scheduled timeouts behind
+        it; without the ticket, an old one would fire and cancel whichever
+        recv the task happened to be waiting on at that moment -- a timeout
+        from one operation aborting a later, unrelated one.
+        """
         waiters = self._waiters[node]
-        if tid in waiters:
-            waiters.remove(tid)
-            self.sim.log("timeout", f"{node} gave up waiting")
-            self.sim.wake(tid, None)
+        for index, (tid, waiting_ticket) in enumerate(waiters):
+            if waiting_ticket == ticket:
+                waiters.pop(index)
+                self.sim.log("timeout", f"{node} gave up waiting")
+                self.sim.wake(tid, None)
+                return
 
     def pending(self, node: str) -> int:
         return len(self._inboxes.get(node, []))
