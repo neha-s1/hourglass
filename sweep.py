@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -197,11 +198,32 @@ def main() -> None:
     parser.add_argument("--clients", type=int, default=5)
     parser.add_argument("--ops", type=int, default=20)
     parser.add_argument("--keys", type=int, default=3)
+    parser.add_argument(
+        "--broken",
+        action="store_true",
+        help="switch both known bugs back on (no read repair, count messages not replicas)",
+    )
     parser.add_argument("--save", action="store_true", help="write failures/ files")
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument(
+        "--fail-on-violation",
+        action="store_true",
+        help="exit non-zero if any seed violates -- the regression gate",
+    )
+    parser.add_argument(
+        "--expect-violations",
+        action="store_true",
+        help="exit non-zero if NO seed violates -- proves the checker still detects",
+    )
     args = parser.parse_args()
 
-    config = ClusterConfig(clients=args.clients, operations_per_client=args.ops, keys=args.keys)
+    config = ClusterConfig(
+        clients=args.clients,
+        operations_per_client=args.ops,
+        keys=args.keys,
+        read_repair=not args.broken,
+        count_distinct_replicas=not args.broken,
+    )
     faults = PROFILES[args.faults]()
 
     # -- one seed ----------------------------------------------------------
@@ -270,6 +292,14 @@ def main() -> None:
         print(f"  undecided:  {unknown} (search budget exhausted)")
     if failures:
         print(f"  seeds:      {[t.seed for t in failures][:25]}")
+
+    if args.fail_on_violation and failures:
+        print(f"\nFAILED: {len(failures)} seeds produced non-linearizable histories")
+        sys.exit(1)
+
+    if args.expect_violations and not failures:
+        print("\nFAILED: expected the known bugs to be detected, found nothing")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

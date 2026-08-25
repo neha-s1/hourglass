@@ -1,0 +1,77 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # A nightly run with fresh seeds. The bugs this project exists to catch are
+  # rare, so a sweep that only ever sees the same seeds stops searching.
+  schedule:
+    - cron: "0 6 * * *"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install pytest
+        run: python -m pip install --quiet pytest
+
+      - name: Unit tests
+        run: python -m pytest -q
+
+      - name: Determinism across machines
+        # The seed is only worth anything if it means the same thing on
+        # hardware the author has never touched. This is that check.
+        run: |
+          python -m hourglass.demo --seed 225 --quiet
+          python -m hourglass.demo --scan 1000
+
+  sweep:
+    name: linearizability sweep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: The store must be linearizable
+        # The regression gate. Every one of these seeds used to fail; if a
+        # change reintroduces the duplicate-counting bug or removes read
+        # repair, this goes red.
+        run: python sweep.py --seeds 1000 --faults hostile --quiet --fail-on-violation
+
+      - name: The checker must still catch the bugs it caught before
+        # The other direction, and the one that is easy to forget. A checker
+        # that quietly stopped detecting anything would make the step above
+        # pass forever while proving nothing.
+        run: python sweep.py --seeds 300 --faults hostile --broken --quiet --expect-violations
+
+  nightly-deep-sweep:
+    name: deep sweep
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Sweep a fresh range of seeds
+        # Starts wherever the day number lands, so each night explores seeds
+        # nobody has run before.
+        run: |
+          START=$(( $(date +%j) * 20000 ))
+          python sweep.py --start $START --seeds 20000 --faults hostile --quiet --fail-on-violation

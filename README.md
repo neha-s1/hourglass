@@ -119,9 +119,83 @@ Both writes completed before the read began, so every valid ordering ends
 The timed-out write did land — the first read proves it. The second read began
 after the first returned, so it cannot see an older world than the first did.
 
-All three trace to the same three omissions in the store: a partial write is
-never rolled back, nothing repairs a replica that missed an update, and a read
-quorum can land entirely on replicas that never saw the write.
+## The two bugs, and what fixed them
+
+Tracing those failures back turned three symptoms into two causes.
+
+### 1. A duplicated packet faked a quorum
+
+The read on seed 17 counted three replies — from two replicas:
+
+```
+557123209  deliver r2->c0  ('get_ok','c0-2', None, (-1,-1))   <- r2
+559151002  deliver r3->c0  ('get_ok','c0-2', None, (-1,-1))   <- r3
+561198224  deliver r2->c0  ('get_ok','c0-2', None, (-1,-1))   <- r2 again
+```
+
+The client counted *messages*. The overlap argument behind `W + R > N` counts
+*machines*: three writers and three readers out of five must share at least
+one. Two readers and three writers need not. The replica holding the value
+answered 1.7 seconds too late.
+
+**Fix:** count answering replicas, not arriving messages.
+
+### 2. A read could observe a value and then un-observe it
+
+```
+[ 166.17 -> pending ]  c0 put(key1,'c0#2') -> PENDING
+[ 640.18 ->  676.66 ]  c1 get(key1) -> 'c0#2'    <- so it DID land somewhere
+[ 677.43 ->  742.65 ]  c0 get(key1) -> None      <- 0.8ms later, gone
+```
+
+A timed-out write reached one replica. One read's quorum happened to include
+it; the next read's did not. Reading was a *peek*.
+
+**Fix:** before returning a value, write it back to a quorum — the second
+phase of the [ABD algorithm](https://en.wikipedia.org/wiki/Shared_register).
+The write-back carries the original timestamp so it reorders nothing; it only
+guarantees that what a read reports, every later read must see. This is why a
+linearizable read costs two round trips instead of one.
+
+### Each fix, measured
+
+Both are switchable, so the effect of each is separable — and so the checker
+keeps a real target to be tested against:
+
+| store | violations in 300 seeds |
+|---|---|
+| both bugs present | **55** |
+| read repair only | 12 |
+| distinct-replica counting only | 24 |
+| both fixes | **0** |
+
+```console
+$ python sweep.py --seeds 2000 --faults hostile
+  violations: 0 (0.0%)
+```
+
+Two thousand seeds, two hundred thousand operations, ten percent packet loss,
+five percent duplication, randomised partitions and crashes. Nothing.
+
+Reads got slower, which is the honest cost: median 66ms, p95 90ms, two round
+trips instead of one.
+
+### Kept honest by CI
+
+The gate runs in both directions on every push, because a checker that
+silently stopped detecting anything would make a one-directional gate pass
+forever while proving nothing:
+
+```yaml
+- name: The store must be linearizable
+  run: python sweep.py --seeds 1000 --faults hostile --fail-on-violation
+
+- name: The checker must still catch the bugs it caught before
+  run: python sweep.py --seeds 300 --faults hostile --broken --expect-violations
+```
+
+A nightly job sweeps 20,000 *fresh* seeds, offset by the day of the year —
+because a search that only ever runs the same seeds has stopped searching.
 
 ## How it works
 
@@ -146,7 +220,7 @@ Under active development. Built in the open, one day at a time.
 - [x] Day 3 — a quorum-replicated key-value store to test
 - [x] Day 4 — linearizability checker
 - [x] Day 5 — the bug hunt, with automatic shrinking
-- [ ] Day 6 — fixes and CI regression gate
+- [x] Day 6 — fixes and CI regression gate
 - [ ] Day 7 — writeup
 
 ## Running it

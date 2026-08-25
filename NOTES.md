@@ -99,6 +99,21 @@ My answers:
 
 ## Day 6 — fixes and CI
 
+Questions to answer in my own words:
+
+1. Why is counting replies instead of replicas a bug? Draw the five replicas
+   and show why `W + R > N` stops working.
+2. Why does writing a value back before returning it stop a value from being
+   observed and then un-observed?
+3. The write-back reuses the *original* timestamp instead of a new one. Why
+   does that matter?
+4. What did the fix cost, and would I take that trade in every system?
+5. Why does CI check that the checker still *finds* the bugs, not only that
+   the store passes? What would break without that second check?
+6. Why did I keep both bugs switchable instead of deleting them?
+
+My answers:
+
 > _(fill in)_
 
 ## Day 7 — the writeup
