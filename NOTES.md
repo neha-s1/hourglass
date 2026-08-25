@@ -80,6 +80,21 @@ My answers:
 
 ## Day 5 — the bug hunt
 
+Questions to answer in my own words:
+
+1. Why does the sweep generate the *network disaster* from the seed too, and
+   not just the workload?
+2. What is delta debugging doing that removing one item at a time would not?
+3. Shrinking a simulation is not monotone — fewer operations means a
+   *different* run, not a shorter one. Why does that rule out binary search?
+4. Minimising the witness once produced a single read, which was a sound proof
+   but a useless explanation. What went wrong, and what rule fixed it?
+5. 372 violations in 2000 seeds, and 0 in 2000 on a healthy network. Why is the
+   second number the more important one?
+6. Explain the seed 17 bug to someone non-technical in two sentences.
+
+My answers:
+
 > _(fill in)_
 
 ## Day 6 — fixes and CI

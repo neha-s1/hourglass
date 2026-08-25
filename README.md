@@ -65,6 +65,64 @@ read returned a *much older* value. No single correct database, serving one
 request at a time, could ever produce that sequence — and the checker proves
 it by exhausting every possible ordering rather than guessing.
 
+## The bug hunt
+
+```console
+$ python sweep.py --seeds 2000 --faults hostile
+swept 2000 seeds in 32.0s (16.0ms each)
+  faults:     hostile (latency=1-50ms drop=10% dup=5% slow=20%)
+  workload:   5 clients x 20 ops on 3 keys
+  violations: 372 (18.6%)
+```
+
+**372 failures out of 2000 — and zero out of 2000 on a healthy network.**
+That second number is what makes the first one worth anything: across 200,000
+operations of a system behaving correctly, the checker never once cried wolf.
+
+Each failure is one integer. `--shrink` strips away every client, operation,
+key and network fault that was not needed, and the checker reduces the
+surviving history to the smallest set of operations that cannot be ordered —
+typically two or three, with the timings that prove it.
+
+### Three bugs it found
+
+**A write that was acknowledged, then vanished** — `--seed 17`
+
+```
+[   14.48 ->    80.82 ]ms  c1 put(key0, 'c1#0') -> ok
+[  544.35 ->   561.20 ]ms  c0 get(key0) -> None   <-- impossible
+```
+
+The write succeeded and said so. Four hundred milliseconds later — no overlap,
+no ambiguity — a read found nothing there.
+
+**A stale read** — `--seed 0`
+
+```
+[  411.03 ->   460.75 ]ms  c1 put(key1, 'c1#3') -> ok
+[  635.33 ->   692.74 ]ms  c3 put(key1, 'c3#2') -> ok
+[  722.28 ->   767.71 ]ms  c2 get(key1) -> 'c1#3'   <-- impossible
+```
+
+Both writes completed before the read began, so every valid ordering ends
+`c1#3 → c3#2 → get`. The read had to return `'c3#2'`.
+
+**A read that went backwards** — `--seed 1`
+
+```
+[  586.98 ->   637.47 ]ms  c4 put(key2, 'c4#2') -> ok
+[  630.03 ->  pending ]ms  c1 put(key2, 'c1#2') -> PENDING
+[  717.84 ->   776.97 ]ms  c3 get(key2) -> 'c1#2'
+[  802.68 ->  1032.04 ]ms  c3 get(key2) -> 'c4#2'   <-- impossible
+```
+
+The timed-out write did land — the first read proves it. The second read began
+after the first returned, so it cannot see an older world than the first did.
+
+All three trace to the same three omissions in the store: a partial write is
+never rolled back, nothing repairs a replica that missed an update, and a read
+quorum can land entirely on replicas that never saw the write.
+
 ## How it works
 
 Three sources of nondeterminism, all removed:
@@ -87,7 +145,7 @@ Under active development. Built in the open, one day at a time.
 - [x] Day 2 — simulated network: latency, loss, duplication, reordering, partitions, crashes
 - [x] Day 3 — a quorum-replicated key-value store to test
 - [x] Day 4 — linearizability checker
-- [ ] Day 5 — the bug hunt, with automatic shrinking
+- [x] Day 5 — the bug hunt, with automatic shrinking
 - [ ] Day 6 — fixes and CI regression gate
 - [ ] Day 7 — writeup
 
